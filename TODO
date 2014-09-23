@@ -1,0 +1,31 @@
+# TODO Wed Sep 10 09:21:07 2014 GMT
+# $Id: TODO 12 2014-09-23 13:16:47Z abalama $
+
+# GENERAL
+ 
+    * Проверить скелетоны сравнив пример с настройками десктопа, привести их в соответствие
+
+    * ALERTGRID: 2 dni
+      + alertgrid_snmp (?)
+
+    * RRD: 2 dni
+      
+# BUGS
+
+    * none
+
+# REFACTORING
+
+    * none
+
+# DOCUMENTATION
+
+    * Создать WEB мануал по аналогии с App::MBUtiny
+
+# DIAGNOSTICS
+
+    * none
+
+# SUPPORT
+
+    * none
