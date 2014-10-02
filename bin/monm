@@ -1,14 +1,14 @@
 #!/usr/bin/perl -w
-# $Id: monm 12 2014-09-23 13:16:47Z abalama $
+# $Id: monm 15 2014-09-24 11:17:10Z abalama $
 use strict;
 
 =head1 NAME
 
-monm - easily interact with App::MonM from the command line
+monm - Easily interact with App::MonM from the command line
 
 =head1 VERSION
 
-Version 1.06
+Version 1.07
 
 =head1 SYNOPSIS
 

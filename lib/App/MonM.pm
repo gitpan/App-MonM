@@ -1,4 +1,4 @@
-package App::MonM; # $Id: MonM.pm 12 2014-09-23 13:16:47Z abalama $
+package App::MonM; # $Id: MonM.pm 18 2014-10-02 14:49:45Z abalama $
 use strict;
 
 =head1 NAME
@@ -7,7 +7,7 @@ App::MonM - Simple Monitoring Tools
 
 =head1 VERSION
 
-Version 1.00
+Version 1.01
 
 =head1 SYNOPSIS
 
@@ -153,7 +153,7 @@ See C<LICENSE> file
 =cut
 
 use vars qw/ $VERSION /;
-$VERSION = '1.00';
+$VERSION = '1.01';
 
 use CTKx;
 use CTK::Util;
@@ -628,6 +628,7 @@ sub http {
         my $uas = node($hhua, $_);
         $uaopt{$_} = array($uas) if is_array($uas);
         $uaopt{$_} = value($uas) if is_value($uas);
+        $uaopt{$_} = hash($uas) if is_hash($uas) && $_ ne 'header';
     }
     my $ua = new LWP::UserAgent(%uaopt); 
     
@@ -955,9 +956,9 @@ sub foutput { # Возвращает данные в выбранном (по типу) формате и отправка резул
             );
         Encode::_utf8_on($doc) if $self->opt("utf8");
     } elsif ($type eq 'json') {
-        my $output = {}; foreach (keys %$base) { $output->{$_} = [$base->{$_}] };
-        $output->{head} = [{ th => $head }];
-        $output->{data} = [{ td => $data }];
+        my $output = {}; foreach (keys %$base) { $output->{$_} = $base->{$_} };
+        $output->{head} = { th => $head };
+        $output->{data} = { td => $data };
         $doc = to_json( $output,
                 {
                     utf8 => $self->opt('utf8') ? 0 : 1,
@@ -965,10 +966,16 @@ sub foutput { # Возвращает данные в выбранном (по типу) формате и отправка резул
             );
         Encode::_utf8_on($doc) if $self->opt("utf8");
     } elsif ($type eq 'yaml' or $type eq 'yml') {
-        $doc = Dump($base, $head, $data);
+        my $output = {}; foreach (keys %$base) { $output->{$_} = $base->{$_} };
+        $output->{head} = { th => $head };
+        $output->{data} = { td => $data };
+        $doc = Dump($output);
         Encode::_utf8_on($doc) if $self->opt("utf8");
     } elsif ($type eq 'dump' or $type eq 'dmp') {
-        $doc = Dumper($base, $head, $data)
+        my $output = {}; foreach (keys %$base) { $output->{$_} = $base->{$_} };
+        $output->{head} = { th => $head };
+        $output->{data} = { td => $data };
+        $doc = Dumper($output)
     } elsif ($type eq 'none') {
         return VOID;
     } else { # } elsif ($type eq 'text' or $type eq 'txt') { # По умочанию - текстовый вывод данных

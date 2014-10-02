@@ -1,4 +1,4 @@
-package App::MonM::Skel::Config; # $Id: Config.pm 12 2014-09-23 13:16:47Z abalama $
+package App::MonM::Skel::Config; # $Id: Config.pm 18 2014-10-02 14:49:45Z abalama $
 use strict;
 
 use CTK::Util qw/ :BASE /;
@@ -6,7 +6,7 @@ use CTK::Util qw/ :BASE /;
 use constant SIGNATURE => "config";
 
 use vars qw($VERSION);
-$VERSION = '1.00';
+$VERSION = '1.01';
 
 sub build { # Процесс сборки
     my $self = shift;
@@ -84,8 +84,7 @@ Mode: 644
     #Sendmail   /usr/sbin/sendmail
     #Flags      -t
     SMTP        192.168.0.1
- </SendMail>
-
+</SendMail>
 -----END FILE-----
 
 -----BEGIN FILE-----
@@ -109,7 +108,7 @@ Mode: 644
 <Checkit "foo">
     Enable      yes
     URL         http://www.example.com
-    HttpTarget  code
+    Target      code
     IsTrue      200
 </Checkit>
 -----END FILE-----
@@ -125,7 +124,7 @@ Mode: 644
 <Checkit "foo">
     Enable      yes
     URL         http://www.example.com
-    HttpTarget  code
+    Target      code
     IsTrue      200
 </Checkit>
 -----END FILE-----
@@ -309,6 +308,10 @@ Mode: 644
         Accept-Language     ru
         Cache-Control       no-cache
       </Header>
+      <SSL_OPTS>
+        verify_hostname		0
+      </SSL_OPTS>
+
       Protocols_Allowed     http
       Protocols_Allowed     https # Required Crypt::SSLeay
 
