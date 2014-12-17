@@ -1,4 +1,4 @@
-package App::MonM::Skel::Config; # $Id: Config.pm 18 2014-10-02 14:49:45Z abalama $
+package App::MonM::Skel::Config; # $Id: Config.pm 40 2014-12-16 14:48:05Z abalama $
 use strict;
 
 use CTK::Util qw/ :BASE /;
@@ -85,6 +85,7 @@ Mode: 644
     #Flags      -t
     SMTP        192.168.0.1
 </SendMail>
+
 -----END FILE-----
 
 -----BEGIN FILE-----
@@ -111,6 +112,7 @@ Mode: 644
     Target      code
     IsTrue      200
 </Checkit>
+
 -----END FILE-----
 
 -----BEGIN FILE-----
@@ -127,6 +129,7 @@ Mode: 644
     Target      code
     IsTrue      200
 </Checkit>
+
 -----END FILE-----
 
 -----BEGIN FILE-----
@@ -265,6 +268,7 @@ Type: Windows
     # SMSGW "sendalertsms "[NUMBER]" "[SUBJECT]" "[MESSAGE]""
 
 </Checkit>
+
 -----END FILE-----
 
 -----BEGIN FILE-----
@@ -283,6 +287,7 @@ Mode: 644
     Set mysql_enable_utf8   1
     Set PrintError          0
 </DBI>
+
 -----END FILE-----
 
 -----BEGIN FILE-----
@@ -326,4 +331,271 @@ Mode: 644
       Timeout       180
     </UA>
 </HTTP>
+
+-----END FILE-----
+
+-----BEGIN FILE-----
+Name: alertgrid.conf.sample
+File: conf.d/alertgrid.conf.sample
+Mode: 644
+
+<AlertGrid>
+    AlertGridName   localhost
+    
+    <Agent>
+        IP 127.0.0.1
+    
+        #TransferType   local
+        TransferType    http
+        
+        # HTTP connect
+        <HTTP>
+            URI     "http://USER:PASSWORD@host.example.com:8082/alertgrid.cgi?foo=bar"
+        
+            #Method  GET
+            Method  POST
+
+            #Login          USER
+            #Password       PASSWORD
+            
+            #SendDBFile      yes
+            
+            CookieEnable    no
+            <Cookie>
+                Autosave    1
+                #File       data/test.cj
+            </Cookie>
+            
+            <UA>
+                <Header>
+                    #Accept-Language    ru
+                    Cache-Control       no-cache
+                </Header>
+                <SSL_OPTS>
+                    verify_hostname		0
+                </SSL_OPTS>
+                
+                Protocols_Allowed	http
+                # Required Crypt::SSLeay
+                Protocols_Allowed	https
+
+                Requests_Redirectable	GET
+                Requests_Redirectable	HEAD
+                Requests_Redirectable	POST
+                
+                Agent           "MonM/1.0"
+                Max_Redirect    10
+                Keep_Alive      1
+                Env_Proxy       1
+                Timeout         5
+            </UA>
+            
+            # Attributes
+            #Set foo 1
+            #Set bar 2
+            #Set baz 3
+            
+        </HTTP>
+    </Agent>
+    
+    <Server>
+        DBFile      "/var/tmp/alertgrid.db"
+
+    </Server>
+
+    <Count "foo">
+        #Enable     no
+        Enable      yes
+
+        #Type       dbi
+        #Type       oracle
+        #Type       http
+        #Type       command
+        Type        command
+        
+        #Command    "alertgrid_snmp -c mydesktop get SNMPv2-MIB::sysName.0"
+        #Command    "alertgrid_snmp -s mydesktop -c mydesktop resources"
+        Command     "alertgrid_snmp -c mydesktop get SNMPv2-MIB::sysName.0"
+    </Count>
+
+    <Count "bar">
+        Enable      yes
+        Type        command
+        Command     "cat data/2.xml"
+    </Count>
+
+    <Count "baz">
+        Enable      yes
+        Type        command
+        Command     "cat data/3.xml"
+    </Count>
+    <Count "qux">
+        Enabled     no
+    </Count>
+</AlertGrid>
+
+-----END FILE-----
+
+-----BEGIN FILE-----
+Name: alertgrid.conf.sample
+File: conf.d/alertgrid.conf.sample
+Mode: 644
+Type: Windows
+
+<AlertGrid>
+    # Имя. Нужно при работе с виртуальными хостами, чаще всего используется доменное имя
+    # сервера или имя хоста
+    AlertGridName   localhost
+    
+    # Настройки активного агента
+    <Agent>
+        # IP клиента для локального обращения к серверу. Чаще всего используется 127.0.0.1
+        IP              127.0.0.1
+    
+        # Тип общения с сервером, принимающим запросы от клиента. По умолчанию http
+        #TransferType    local
+        #TransferType    http
+        
+        # HTTP connect
+        <HTTP>
+            URI     "http://USER:PASSWORD@host.example.com:8082/alertgrid.cgi?foo=bar"
+        
+            #Method  GET
+            Method  POST
+
+            # Логин и пароль можно задавать используя эти параметры или использовать URI, см. выше
+            #Login          USER
+            #Password       PASSWORD
+            
+            # Нужно ли отправлять значение конфигурационного параметра AlertGrid/Server/DBFile
+            # на сервер при работе с ним. По умолчанию - выключено. Если вы используете агент и
+            # сервер на одном и том же оборудовании то следует включить данную опцию
+            #SendDBFile      yes
+            
+            # Опциональная поддержка работы с Cookies
+            CookieEnable    no
+            <Cookie>
+                Autosave    1
+                #File       data/test.cj
+            </Cookie>
+            
+            # Опции агента HTTP. См. модуль libwww-perl
+            <UA>
+                <Header>
+                    #Accept-Language    ru
+                    Cache-Control       no-cache
+                </Header>
+                <SSL_OPTS>
+                    verify_hostname		0
+                </SSL_OPTS>
+                
+                Protocols_Allowed	http
+                # Required Crypt::SSLeay
+                Protocols_Allowed	https
+
+                Requests_Redirectable	GET
+                Requests_Redirectable	HEAD
+                Requests_Redirectable	POST
+                
+                Agent           "MonM/1.0"
+                Max_Redirect    10
+                Keep_Alive      1
+                Env_Proxy       1
+                Timeout         5
+            </UA>
+            
+            # Attributes
+            #Set foo 1
+            #Set bar 2
+            #Set baz 3
+            
+        </HTTP>
+    </Agent>
+    
+    # Настройки локального пассивного сервера
+    <Server>
+        # Путь до файла базы данных alertgrid
+        DBFile      "/var/tmp/alertgrid.db"
+
+    </Server>
+
+    # Счетчики AlertGrid
+    <Count "foo">
+        # Включен или выключен счетчик. По умолчанию - выключен!
+        #Enable    no
+        Enable     yes
+
+        # Тип способа получения результата.
+        #Type        dbi
+        #Type        oracle
+        #Type        http
+        #Type        command
+        Type        command
+        
+        #Command     "alertgrid_snmp -c mydesktop get SNMPv2-MIB::sysName.0"
+        #Command     "alertgrid_snmp -s mydesktop -c mydesktop resources"
+        Command      "alertgrid_snmp -c mydesktop get SNMPv2-MIB::sysName.0"
+    </Count>
+
+    <Count "bar">
+        Enable     yes
+        Type        command
+        Command     "cat data/2.xml"
+    </Count>
+
+    <Count "baz">
+        Enable     yes
+        Type        command
+        Command     "cat data/3.xml"
+    </Count>
+    <Count "qux">
+        Enabled     no
+    </Count>
+</AlertGrid>
+
+-----END FILE-----
+
+-----BEGIN FILE-----
+Name: rrd.conf.sample
+File: conf.d/rrd.conf.sample
+Mode: 644
+
+<RRD>
+    OutputDirectory	"/var/www/rrd"
+    ImageMask		"[TYPE].[KEY].[GTYPE].[EXT]"
+    IndexFile     	"index.html"
+    #IndexTemplateFile	"/root/index.tpl"
+    #IndexTemplateURI	"http://USER:PASSWORD@host.example.com:8080/index.htm"
+    
+    <Graph "rl0">
+        Enable yes
+        Type traffic
+        File        "/root/traffic.rl0.rrd"
+        SRCinput    127.0.0.1::test::rl0::traffic::1::In
+        SRCoutput   127.0.0.1::test::rl0::traffic::1::Out
+    </Graph>
+    
+    <Graph "rl1">
+        Enable yes
+        Type traffic
+        File        "/root/traffic.rl1.rrd"
+        SRCinput    127.0.0.1::test::rl1::traffic::2::In
+        SRCoutput   127.0.0.1::test::rl1::traffic::2::Out
+    </Graph>
+
+    <Graph "myhost">
+        Enable yes
+        Type resources
+        File    "/root/resources.bar.rrd"
+        SRCCPU  127.0.0.1::test::myhost::resources::cpu::UsedPercent
+        SRCHDD  127.0.0.1::test::myhost::resources::hdd::UsedPercent
+        SRCMEM  127.0.0.1::test::myhost::resources::mem::UsedPercent
+        SRCSWP  127.0.0.1::test::myhost::resources::swp::UsedPercent
+    </Graph>
+    
+    <Graph "baz">
+        Enable no
+    </Graph>
+</RRD>
+
 -----END FILE-----

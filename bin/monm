@@ -1,5 +1,5 @@
 #!/usr/bin/perl -w
-# $Id: monm 15 2014-09-24 11:17:10Z abalama $
+# $Id: monm 38 2014-12-16 12:37:57Z abalama $
 use strict;
 
 =head1 NAME
@@ -8,14 +8,14 @@ monm - Easily interact with App::MonM from the command line
 
 =head1 VERSION
 
-Version 1.07
+Version 1.08
 
 =head1 SYNOPSIS
 
-    monm [-dltUv] [options] [commands [args]] 
+    monm [-dltUvI] [options] [commands [args]] 
 
     monm [--debug] [--log] [--testmode] [--conf=CONFFILE] [--datadir=DATADIR]
-         [ void | test | dbi [name] | http [name] | 
+         [ void | test | config | dbi [name] | http [name] | 
            checkit [countname] | alertgrid [type] | rrd [subcommand] ]
     
     monm test -dv
@@ -64,7 +64,7 @@ Default: text
 
 Show help information
 
-=item B<-?, --longhelp>
+=item B<-H, -?, --longhelp>
 
 Show long help information
 
@@ -111,7 +111,7 @@ Defines QUERY_STRING or CONTENT for PUT/POST method http command
 
 Defines SID for dbi command
 
-=item B<--stdin, --std>
+=item B<-I, --stdin, --std>
 
 Uses STDIN for getting data for selected command
 
@@ -152,6 +152,35 @@ Show version number of App::MonM module
 =item B<void>
 
 The program starts and does nothing. Is used to test run
+
+=item B<test>
+
+Performing testing program components. That command is a superset of commands void
+
+=item B<config, configure>
+
+Command allows you to initialize the monm, prepare it for operation. This command should be 
+performed immediately after the first installation of the module App::MonM
+
+=item B<dbi>
+
+SQL query using the DBI
+
+=item B<http>
+
+Performance of HTTP/HTTPS requests using LWP
+
+=item B<checkit>
+
+Checking the status of services with the possibility of informing about the change of these states
+
+=item B<alertgrid>
+
+Collection and storage of the latest statistical data from different sources
+
+=item B<rrd>
+
+Charting mechanism according to collected via alertgrid. See alertgrid command
 
 =back
 
@@ -260,6 +289,7 @@ use constant {
         alertgrid => { # Запрос ALERTGRID
             logfile => "monm_alertgrid.log",
             pidfile => "monm_alertgrid.pid",
+            dbfile  => "alertgrid.db", # База данных AlertGrid
         },
         rrd => { # Запрос RRD
             logfile => "monm_rrd.log",
@@ -278,7 +308,7 @@ GetOptions(\%OPT,
     
     # Справка и отладка
     "help|usage|h",         # Show help page
-    "longhelp|?",           # Show long help page
+    "longhelp|H|?",         # Show long help page
     "debug|d",              # Debug mode
     "log|l",                # Log mode (monm_debug.log)
     "testmode|test|t",      # Test mode
@@ -295,7 +325,7 @@ GetOptions(\%OPT,
     "timeout|T=i",          # Таймаут операций (в секундах)
    
     # Ввод/Вывод
-    "stdin|std",            # Данные принимаем из стандартного входа
+    "stdin|std|I",          # Данные принимаем из стандартного входа
     "input|in|i=s",         # Имя файла для ввода
     "output|out|o=s",       # Имя файла для вывода
     "file|filename|f=s",    # Имя файла для ввода или вывода
@@ -317,7 +347,7 @@ GetOptions(\%OPT,
 ### NoUsed keys map:
 ### 
 ### a A b B - C - - e E
-### - - g G - H - I j J
+### - - g G - - - - j J
 ### k K - L - M - N - O
 ### - P - Q - R - S - -
 ### - - - - w W x X y Y
@@ -341,7 +371,7 @@ $DATADIR = $OPT{datadir} || CTK::catfile(CTK::tmpdir(),PREFIX); # Основная рабоч
 $LOGDIR  = CTK::syslogdir();
 $LOGFILE = CTK::catfile($LOGDIR,PREFIX."_debug.log");
 $CONFFILE= $OPT{conf} && (-d $OPT{conf}) ? CTK::catfile($OPT{conf}, PREFIX.'.conf') : ($OPT{conf} || CTK::catfile($SYSCONFDIR,PREFIX,PREFIX.'.conf'));
-$CONFDIR = $OPT{conf} ? (CTK::splitpath( $CONFFILE ))[1] : CTK::catfile($SYSCONFDIR,PREFIX);
+$CONFDIR = $OPT{conf} ? (CTK::splitpath( $CONFFILE ))[1,2] : CTK::catfile($SYSCONFDIR,PREFIX);
 
 # checks
 CTK::preparedir( $DATADIR );
@@ -421,7 +451,7 @@ sub CONFIG { # Конфигурирование (генерация новых файлов конфигурации)
     say("Creating configuration...");
     debug(sprintf("Creating configuration to %s",$CONFDIR));
     
-    my $sharedir = CTK::catfile(CTK::sharedir(), PREFIX);
+    my $sharedir = CTK::catdir(CTK::sharedir(), PREFIX);
     my $h = new App::MonM::Helper (
         -config => $CONFDIR,
         -share  => $sharedir,
@@ -473,10 +503,59 @@ sub CHECKIT {
     1;
 }
 sub ALERTGRID {
-    debug("Coming soon...");
+    my $c = shift;
+    my $monm = new App::MonM(%OPT);
+    my %data = @_;
+    my $ctx = $data{args} && $data{args}[0] ? $data{args}[0] : '';
+    
+    my $status;
+    
+    if ($ctx eq 'server') {
+        $status = $monm->alertgrid_server(@_);
+    } elsif ($ctx =~ /^(agent|client)$/) {
+        $status = $monm->alertgrid_client(@_);
+    } elsif ($ctx =~ /^(init|start|create)$/) {
+        $status = $monm->alertgrid_init(@_);
+    } elsif ($ctx =~ /^(clean|clear)$/) {
+        $status = $monm->alertgrid_clear(@_);
+    } elsif ($ctx =~ /^(cfg|conf|config|settings)$/) {
+        $status = $monm->alertgrid_config(@_);
+    } elsif ($ctx =~ /^(snapshot|snap|stamp|view)$/) {
+        $status = $monm->alertgrid_snapshot(@_);
+    } elsif ($ctx =~ /^(export)$/) {
+        $status = $monm->alertgrid_export(@_);
+    } else { # error
+        #debug("Error. Context incorrect");
+        pod2usage(-exitval => 0, -verbose => 1);
+    }
+    
+    say $monm->message if $OPT{output} && $OPT{verbose};
+    
+    1;
 }
 sub RRD {
-    debug("Coming soon...");
+    my $c = shift;
+    my $monm = new App::MonM(%OPT);
+    my %data = @_;
+    my $ctx = $data{args} && $data{args}[0] ? $data{args}[0] : '';
+    
+    my $status;
+    
+    if ($ctx =~ /^(create|init|start)$/) {
+        $status = $monm->rrdtool_create(@_);
+    } elsif ($ctx =~ /^(update|renew)$/) {
+        $status = $monm->rrdtool_update(@_);
+    } elsif ($ctx =~ /^(graph|generate|graphic)$/) {
+        $status = $monm->rrdtool_graph(@_);
+    } elsif ($ctx =~ /^(index|build|result)$/) {
+        $status = $monm->rrdtool_index(@_);
+    } else { # error
+        pod2usage(-exitval => 0, -verbose => 1);
+    }
+    
+    say $monm->message if $OPT{output} && $OPT{verbose};
+    
+    1;
 }
 __END__
 debug("Coming soon...");

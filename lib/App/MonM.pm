@@ -1,4 +1,4 @@
-package App::MonM; # $Id: MonM.pm 18 2014-10-02 14:49:45Z abalama $
+package App::MonM; # $Id: MonM.pm 37 2014-12-16 08:35:07Z abalama $
 use strict;
 
 =head1 NAME
@@ -7,7 +7,7 @@ App::MonM - Simple Monitoring Tools
 
 =head1 VERSION
 
-Version 1.01
+Version 1.02
 
 =head1 SYNOPSIS
 
@@ -106,6 +106,22 @@ The method returns status of "http" request. See L<monm> and README for details
 
 The method returns status of "checkit" request. See L<monm> and README for details
 
+=item B<alertgrid_init, alertgrid_clear, alertgrid_config, alertgrid_server, alertgrid_client, alertgrid_snapshot, alertgrid_export>
+
+    my $status = $monm->alertgrid_server( '' );
+or
+    my $status = $monm->alertgrid_client( 'name' );
+
+The group of methods, each of which returns status of "alertgrid" request. 
+See L<monm> and README for details
+
+=item B<rrdtool_create, rrdtool_update, rrdtool_graph, rrdtool_index>
+
+    my $status = $monm->rrdtool_init;
+
+The group of methods, each of which returns status of "rrdtool" request. 
+See L<monm> and README for details
+
 =back
 
 =head1 HISTORY
@@ -153,7 +169,7 @@ See C<LICENSE> file
 =cut
 
 use vars qw/ $VERSION /;
-$VERSION = '1.01';
+$VERSION = '1.02';
 
 use CTKx;
 use CTK::Util;
@@ -173,6 +189,7 @@ use Data::Dumper; $Data::Dumper::Deparse = 1;
 use Try::Tiny;
 
 #use File::Path; # mkpath / rmtree
+use File::Spec;
 
 # libwww
 use URI;
@@ -181,14 +198,19 @@ use HTTP::Request;
 use HTTP::Response;
 use HTTP::Headers;
 use HTTP::Cookies;
+use TemplateM;
 
+use App::MonM::Util;
 use App::MonM::Checkit;
+use App::MonM::AlertGrid;
+use App::MonM::RRDtool;
 
 use constant {
     SCREENSTEP  => 9, # indent
     SCREENWIDTH => 80 - 9, # = <width> - <indent on test-status >
     FORMATS     => [qw/ yaml yml xml json text txt dump dmp none /],
     XMLDECL     => '<?xml version="1.0" encoding="utf-8"?>',
+    AG_TIMEOUT  => 180,
     
     # Test-Statuses
     TRUE        => 1,
@@ -921,6 +943,636 @@ sub checkit {
     
     $self->status;
 }
+sub alertgrid_init {
+    my $self = shift;
+    my %data = @_;
+    my $c = $self->ctkx->c;
+    my $config = $c->config;
+    
+    my $dbfile = value($config, 'alertgrid/server/dbfile') || catfile($c->datadir,$data{dbfile});
+    debug "DBFile: ", $dbfile;
+    
+    start "AlertGrid initialization";
+    my $stt = ag_init($dbfile);
+    my $msg = "";
+    if ($stt) {
+        finish DONE;
+    } else {
+        $self->status(FALSE);
+        $self->message(SKIPPED);
+        $self->error(sprintf "File %s already exists", $dbfile);
+        finish SKIPPED;
+    }
+    
+    # Вывод / Отладка
+    my $rslt = $self->foutput("alertgrid", {
+            dbfile  => $dbfile,
+        });
+    _show_result_data(\$rslt, $self->opt("utf8")) if $self->opt('verbose');
+    $self->status;
+}
+sub alertgrid_clear {
+    my $self = shift;
+    my %data = @_;
+    my $c = $self->ctkx->c;
+    my $config = $c->config;
+    
+    my $dbfile = value($config, 'alertgrid/server/dbfile') || catfile($c->datadir,$data{dbfile});
+    debug "DBFile: ", $dbfile;
+    
+    start "AlertGrid clearing";
+    my $stt = ag_clear($dbfile);
+    my $msg = "";
+    if ($stt) {
+        finish DONE;
+    } else {
+        $self->status(FALSE);
+        $self->message(ERROR);
+        $self->error(sprintf "File %s not exists", $dbfile);
+        finish ERROR;
+    }
+    
+    # Вывод / Отладка
+    my $rslt = $self->foutput("alertgrid", {
+            dbfile  => $dbfile,
+        });
+    _show_result_data(\$rslt, $self->opt("utf8")) if $self->opt('verbose');
+    $self->status;
+}
+sub alertgrid_config {
+    my $self = shift;
+    my %data = @_;
+    my $c = $self->ctkx->c;
+    my $config = $c->config;
+    
+    # Вывод / Отладка
+    my $rslt = $self->foutput("alertgrid", {
+            dbfile  => value($config, 'alertgrid/server/dbfile') || catfile($c->datadir,$data{dbfile}),
+            name    => value($config, 'alertgrid/alertgridname'),
+            ip      => value($config, 'alertgrid/agent/ip') || App::MonM::AlertGrid::LOCALHOSTIP(),
+        });
+    _show_result_data(\$rslt, $self->opt("utf8")) if $self->opt('verbose');
+    $self->status;
+}
+sub alertgrid_snapshot {
+    my $self = shift;
+    my %data = @_;
+    my $c = $self->ctkx->c;
+    my $config = $c->config;
+    my $dbfile = value($config, 'alertgrid/server/dbfile') || catfile($c->datadir,$data{dbfile});
+    my $snapshot;
+    
+    my $transfertype = value($config, "alertgrid/agent/transfertype") || 'http';
+    if ($transfertype =~ /local/i) {
+        debug "DBFile: ", $dbfile;
+        $snapshot = ag_snapshot($dbfile);
+    } else {
+        my $doc = $self->_ag_remote_request(
+                action  => "export",
+                dbfile  => $dbfile,
+            );
+        if ($self->status) {
+            if ($doc =~ s/^OK\r?\n\-\-\-\r?\n//i) {
+                $snapshot = YAML::Tiny::Load($doc);
+            } else {
+                $snapshot = [];
+            }
+        }
+    }
+    
+    my $th = [
+            'id',
+            'ip',
+            'alertgrid',
+            'count',
+            'typ',
+            'value',
+            'pubdate',
+            'expires',
+            'err',
+            'errmsg',
+            'status',
+        ];
+    my $td = [];
+    foreach my $row (@$snapshot) {
+        push @$td, [
+                $row->{id},
+                $row->{ip},
+                $row->{alertgrid_name},
+                $row->{count_name},
+                $row->{type},
+                $row->{value},
+                localtime2date_time($row->{pubdate}),
+                localtime2date_time($row->{expires}),
+                $row->{errcode},
+                $row->{errmsg},
+                $row->{status},
+            ];
+    }
+
+    # Вывод / Отладка
+    my $rslt = $self->foutput("alertgrid", {
+            dbfile  => $dbfile,
+        }, $td, $th);
+    _show_result_data(\$rslt, $self->opt("utf8")) if $self->opt('verbose');
+    $self->status;
+}
+sub alertgrid_export {
+    my $self = shift;
+    my %data = @_;
+    my $c = $self->ctkx->c;
+    my $config = $c->config;
+    #my $mode = $data{args}; $mode = pop @$mode;
+    my $dbfile = value($config, 'alertgrid/server/dbfile') || catfile($c->datadir,$data{dbfile});
+    my $snapshot;
+    
+    my $transfertype = value($config, "alertgrid/agent/transfertype") || 'http';
+    if ($transfertype =~ /local/i) {
+        debug "DBFile: ", $dbfile;
+        $snapshot = ag_snapshot($dbfile);
+    } else {
+        my $doc = $self->_ag_remote_request(
+                action  => "export",
+                dbfile  => $dbfile,
+            );
+        if ($self->status) {
+            if ($doc =~ s/^OK\r?\n\-\-\-\r?\n//i) {
+                $snapshot = YAML::Tiny::Load($doc);
+            } else {
+                $snapshot = [];
+            }
+        }
+    }
+
+    # Вывод / Отладка
+    my $rslt = $self->foutput("alertgrid", {
+            dbfile  => $dbfile,
+            counts  => {count => $snapshot},
+        });
+    _show_result_data(\$rslt, $self->opt("utf8")) if $self->opt('verbose');
+    $self->status;
+}
+sub alertgrid_server {
+    my $self = shift;
+    my %data = @_;
+    my $c = $self->ctkx->c;
+    my $config = $c->config;
+
+    my $dbfile = value($config, 'alertgrid/server/dbfile') || catfile($c->datadir,$data{dbfile});
+    debug "DBFile: ", $dbfile;
+    
+    # DATA from STDIN or FILE
+    my $indata = "";
+    if ($self->opt("stdin")) {
+        $indata = _read_stdin();
+    } elsif ($self->opt("input")) {
+        my $fin = $self->opt("input");
+        $indata = bload( $fin, $self->opt("utf8") ? 1 : 0 ) if -e $fin;
+        debug "Data is unreadable" if $indata eq "";
+    }
+    #debug ">>>\n",$indata,"\n<<<";
+
+    start "AlertGrid server starting";
+    
+    my ($stt, $err) = (0, ""); # Status, Error
+    ($stt, $err) = ag_server({
+                dbfile  => $dbfile,
+                agentip => value($config, 'alertgrid/agent/ip'),
+            }, 
+            $indata
+        );
+    
+    if ($stt) {
+        finish DONE;
+    } else {
+        $self->status(FALSE);
+        $self->message(ERROR);
+        $self->error($err);
+        finish ERROR;
+    }
+    
+    # Вывод
+    my $rslt = $self->foutput("alertgrid", {
+            dbfile  => $dbfile,
+        });
+
+    # Отладка
+    _show_result_data(\$rslt, $self->opt("utf8")) if $self->opt('verbose');
+    
+    $self->status;
+}
+sub alertgrid_client {
+    my $self = shift;
+    my %data = @_;
+    my $c = $self->ctkx->c;
+    my $config = $c->config;
+    my ($stt, $err) = (0, ""); # Status, Error
+
+    my $dbfile = value($config, 'alertgrid/server/dbfile') || catfile($c->datadir,$data{dbfile});
+    my $name = $data{args} && $data{args}[1] ? $data{args}[1] : ''; # Имя счетчика
+    debug "DBFile: ", $dbfile;
+
+    # Получение СПИСКА счетчиков для обработки
+    if ($name) {
+        start "Loading configuration data for count \"$name\"";
+    } else {
+        start "Loading configuration data";
+    }
+    my $counts_node = node($config => "alertgrid/count");
+    my @clist = ();
+    if ($counts_node && ref($counts_node) eq 'HASH') {
+        if ($name) {
+            @clist = grep {($_ eq lc($name)) && is_hash($counts_node, $_)} keys(%$counts_node);
+        } else {
+            @clist = grep {is_hash($counts_node, $_)} keys(%$counts_node);
+        }
+    }
+    if (@clist) {
+        finish DONE;
+    } else {
+        $self->error("No counts found!");
+        $self->message(ERROR);
+        $self->status(FALSE);
+        finish ERROR;
+    }
+
+    # Непосредственно операции над счетчиками
+    my @tableh = ('COUNT','VALUE','STATUS','MESSAGE'); # Итоговая таблица (заголовки)
+    my @tabled; # Итоговая таблица (данные)
+
+    foreach my $count (@clist) {
+        start "Getting data from \"$count\" count...";
+        my $cdata = hash($counts_node, $count); # принимаем сами данные для счетчика
+        if (value($cdata, 'enable')) {
+            my ($status, $result, $error) = ag_client({
+                    type    => value($cdata, 'type'),
+                    command => value($cdata, 'command'),
+                });
+
+            # Наполнение таблицы данными
+            push @tabled, [$count,$result,$status,$error];
+            finish $status ? OK : ERROR; 
+            debug sprintf "Error: %s", $error if $error;
+        } else {
+            finish SKIPPED;
+        }
+    }
+    #::debug Dumper(\@tabled);
+
+    # Проход по данным сформированной таблшицы, и формирование единого документа, который в последствии
+    # отправится по HTTP протоколу на сервер. Данные сорединения берутся из конфигурации
+    my @summary;
+    my $pubdate = time();
+    foreach my $rec (@tabled) {
+        my $base_count_name     = uv2void($rec->[0]) || 'noname';
+        my $base_count_result   = hash($rec->[1]);
+        my $base_count_status   = uv2void($rec->[2]);
+        my $base_count_message  = uv2void($rec->[3]);
+        next unless $base_count_status; # Выход если статус операции получения данных негативный
+
+        # Базовые данные скорректированы, переходим на считывание счетчиков
+        my $count = hash($base_count_result, 'count');
+        foreach my $cntk (keys %$count) {
+            my $cnt             = $count->{$cntk};
+            my $cnt_val         = ref($cnt->{value}) eq 'HASH' ? $cnt->{value} : $cnt->{value}[0];
+            my $cnt_val_type    = uv2void($cnt_val->{type});
+            my $cnt_err         = ref($cnt->{error}) eq 'HASH' ? $cnt->{error} : $cnt->{error}[0];
+            my $cnt_err_code    = tv2int($cnt_err->{code});
+            my $cnt_err_content = uv2void($cnt_err->{content});
+            my $expires         = ref($cnt->{expires}) eq 'ARRAY' ? $cnt->{expires}[0] : $cnt->{expires};
+            my $status          = ref($cnt->{status}) eq 'ARRAY' ? $cnt->{status}[0] : $cnt->{status};
+            
+            if ($cnt_val_type =~ /^STR|DIG$/i) { # единичное преобразование (простое)
+                push @summary, {
+                        count   => sprintf("%s::%s", $base_count_name, $cntk),
+                        pubdate => $pubdate,
+                        expires => expire_calc(uv2void($expires)),
+                        worktms => _tms(),
+                        status  => uv2void($status) || 'ERROR',
+                        errcode => $cnt_err_code,
+                        errmsg  => $cnt_err_content,
+                        type    => $cnt_val_type,
+                        value   => uv2void($cnt_val->{content}),
+                    };
+            } elsif ($cnt_val_type =~ /^TAB$/i) {
+                # Множественное преобразование
+                my $cnt_val_rec = hash($cnt_val->{record});
+                foreach my $rowk (keys %$cnt_val_rec) {
+                    my $row = hash($cnt_val_rec, $rowk);
+                    foreach my $colk (keys %$row) {
+                        my $col = uv2void($row->{$colk});
+                        push @summary, {
+                                count   => sprintf("%s::%s::%s::%s",$base_count_name, $cntk,$rowk,$colk),
+                                pubdate => $pubdate,
+                                expires => expire_calc(uv2void($expires)),
+                                worktms => _tms(),
+                                status  => uv2void($status) || 'ERROR',
+                                errcode => $cnt_err_code,
+                                errmsg  => $cnt_err_content,
+                                type    => is_flt($col) ? 'DIG' : 'STR',
+                                value   => $col,
+                            };
+                    }
+                    
+                    
+                }
+            }
+            
+        }
+    }
+    #::debug Dumper(\@summary);
+    
+    # Получение структуры для передачи от агента -> серверу
+    my $xml = ag_prepare({
+            name => uv2void(value($config => 'alertgrid/alertgridname')),
+        }, \@summary);
+    #::debug $xml;
+    
+    # Принимается тип обращения
+    my $transfertype = value($config, "alertgrid/agent/transfertype") || 'http';
+    if ($transfertype =~ /local/i) {
+        start "AlertGrid local agent starting";
+        ($stt, $err) = ag_server({
+                    dbfile  => $dbfile,
+                    agentip => value($config, 'alertgrid/agent/ip'),
+                },
+                $xml
+            );
+    
+        if ($stt) {
+            finish DONE;
+        } else {
+            $self->status(FALSE);
+            $self->message(ERROR);
+            $self->error($err);
+            finish ERROR;
+        }
+        
+    } else { # http
+        $self->_ag_remote_request(
+                action  => "store",
+                xml     => $xml,
+                dbfile  => $dbfile,
+            );
+    }
+    
+    # Вывод / Отладка
+    my $rslt = $self->foutput("alertgrid", {
+            dbfile  => $dbfile,
+        });
+    _show_result_data(\$rslt, $self->opt("utf8")) if $self->opt('verbose');
+    $self->status;
+}
+sub rrdtool_create {
+    my $self = shift;
+    my %data = @_;
+    my $c = $self->ctkx->c;
+    my $config = $c->config;
+    
+    start "RRDtool initialization";
+    my $rrdtool = new App::MonM::RRDtool $self->opt('testmode') ? 1 : 0;
+    if ($rrdtool->status) {
+        finish DONE;
+        
+        # Получение данных конфигурации секции RRD
+        my $rrdnode = node($config, "rrd");
+        my $graphs = node($rrdnode, "graph");
+        foreach my $k (keys(%$graphs)) {
+            start "Creating RRD file for \"$k\" graph...";
+            my $graph = hash($graphs, $k);
+            unless (value($graph, 'enable')) {
+                finish SKIPPED;
+                next ;
+            }
+            $rrdtool->create(
+                    type => lc(value($graph, 'type') || ''),
+                    file => lc(value($graph, 'file') || ''),
+                );
+            if ($rrdtool->status) {
+                finish DONE;
+            } else {
+                $self->status(FALSE);
+                $self->message(ERROR);
+                $self->error($rrdtool->error);
+                finish ERROR;
+            }
+        }
+    } else {
+        $self->status(FALSE);
+        $self->message(ERROR);
+        $self->error($rrdtool->error);
+        finish ERROR;
+    }
+    
+    # Вывод / Отладка
+    my $rslt = $self->foutput("rrd", {
+            #dbfile  => $dbfile,
+        });
+    _show_result_data(\$rslt, $self->opt("utf8")) if $self->opt('verbose');
+    $self->status;
+}
+sub rrdtool_update {
+    my $self = shift;
+    my %data = @_;
+    my $c = $self->ctkx->c;
+    my $config = $c->config;
+
+    # DATA from STDIN or FILE. Default - error
+    my $indata = "";
+    if ($self->opt("stdin")) {
+        $indata = _read_stdin();
+    } elsif ($self->opt("input")) {
+        my $fin = $self->opt("input");
+        $indata = bload( $fin, 1 ) if -e $fin;
+    }
+    Encode::_utf8_on($indata);
+    
+
+    start "RRDtool initialization";
+    my $rrdtool = new App::MonM::RRDtool $self->opt('testmode') ? 1 : 0;
+    if ($rrdtool->status) {
+        finish DONE;
+        
+        # Получение данных конфигурации секции RRD
+        my $rrdnode = node($config, "rrd");
+        my $graphs = node($rrdnode, "graph");
+        foreach my $k (keys(%$graphs)) {
+            start "Updating RRD files for \"$k\" graph...";
+            my $graph = hash($graphs, $k);
+            unless (value($graph, 'enable')) {
+                finish SKIPPED;
+                next ;
+            }
+            $rrdtool->update(
+                    type => lc(value($graph, 'type') || ''),
+                    file => lc(value($graph, 'file') || ''),
+                    sources => hash($graph),
+                    xml  => $indata,
+                );
+            if ($rrdtool->status) {
+                finish DONE;
+            } else {
+                $self->status(FALSE);
+                $self->message(ERROR);
+                $self->error($rrdtool->error);
+                finish ERROR;
+            }
+        }
+        
+    } else {
+        $self->status(FALSE);
+        $self->message(ERROR);
+        $self->error($rrdtool->error);
+        finish ERROR;
+    }
+
+    # Вывод / Отладка
+    my $rslt = $self->foutput("rrd", {
+            #dbfile  => $dbfile,
+        });
+    _show_result_data(\$rslt, $self->opt("utf8")) if $self->opt('verbose');
+    $self->status;
+}
+sub rrdtool_graph {
+    my $self = shift;
+    my %data = @_;
+    my $c = $self->ctkx->c;
+    my $config = $c->config;
+    
+    start "RRDtool initialization";
+    my $rrdtool = new App::MonM::RRDtool $self->opt('testmode') ? 1 : 0;
+    if ($rrdtool->status) {
+        finish DONE;
+        
+        # Получение данных конфигурации секции RRD
+        my $rrdnode = node($config, "rrd");
+        my $graphs = node($rrdnode, "graph");
+        foreach my $k (keys(%$graphs)) {
+            start "Plotting \"$k\" graph...";
+            my $graph = hash($graphs, $k);
+            unless (value($graph, 'enable')) {
+                finish SKIPPED;
+                next ;
+            }
+            $rrdtool->graph(
+                    name => $k,
+                    type => lc(value($graph, 'type') || ''),
+                    file => lc(value($graph, 'file') || ''),
+                    dir  => value($rrdnode, 'outputdirectory'),
+                    mask => value($rrdnode, 'imagemask'),
+                );
+            if ($rrdtool->status) {
+                finish DONE;
+            } else {
+                $self->status(FALSE);
+                $self->message(ERROR);
+                $self->error($rrdtool->error);
+                finish ERROR;
+            }
+        }
+        
+    } else {
+        $self->status(FALSE);
+        $self->message(ERROR);
+        $self->error($rrdtool->error);
+        finish ERROR;
+    }
+
+    # Вывод / Отладка
+    my $rslt = $self->foutput("rrd", {
+            #dbfile  => $dbfile,
+        });
+    _show_result_data(\$rslt, $self->opt("utf8")) if $self->opt('verbose');
+    $self->status;
+}
+sub rrdtool_index {
+    my $self = shift;
+    my %data = @_;
+    my $c = $self->ctkx->c;
+    my $config = $c->config;
+
+    # !!! ВЕСЬ ПРОЦЕСС ФОРМИРОВАНИЯ ИНДЕКСНОГО ФАЙЛА НУЖНО ЗАРУЛИТЬ ПРЯМИКОМ !!!
+    # !!!    В ЭАТУ ФУНКЦИЮ И УБРАТЬ ЕЕ ИЗ RRDtool.pm ФАЙЛА                  !!!
+    
+    my $tpl_default = catfile(sharedir(), 'monm', 'www', 'rrd.tpl');
+    my $rrdnode = node($config, "rrd");
+    my $graphs  = node($rrdnode, "graph");
+    my $odir    = value($rrdnode, 'outputdirectory');
+    my $mask    = value($rrdnode, 'imagemask') || App::MonM::RRDtool::MASK();
+    my $idx_file    = value($rrdnode, 'indexfile') || '';
+    my $tpl_file    = value($rrdnode, 'indextemplatefile') || 'rrd.tpl';
+    my $tpl_uri     = value($rrdnode, 'indextemplateuri') || '';
+    my $gtypes = App::MonM::RRDtool::GTYPES();
+    my ($volume,$dir,$fakefile) = splitpath(catfile($odir, 'fake.txt'));
+    my $path = File::Spec->catpath( $volume, $dir, '' );
+    
+    # Определяем шаблон
+    my $tpl;
+    if ($tpl_file && -e $tpl_file) {
+        $tpl = new TemplateM(-file => $tpl_file, -asfile => 1, -utf8 => 1, );
+    } elsif ($tpl_uri) {
+        $tpl = new TemplateM(-file => $tpl_uri, -utf8 => 1, );
+    } elsif ($tpl_default && -e $tpl_default) {
+        $tpl = new TemplateM(-file => $tpl_default, -asfile => 1, -utf8 => 1, );
+    } else {
+        $tpl = new TemplateM(-template => "Undefined template file.\n\nPlease edit IndexTemplateFile or IndexTemplateURI configuration parameters", -utf8 => 1, );
+    }
+    $tpl->stash(
+            expires => dtf("%w, %DD %MON %YYYY %hh:%mm:%ss %G",time()+300,1),
+            pubdate => dtf("%w, %DD %MON %YYYY %hh:%mm:%ss %G",time(),1),
+        );
+
+    my @skeys = ();
+    
+    # Выводим индекс (верхняя строка MINI иконок)
+    my $index_box = $tpl->start('index');
+    foreach my $rrdkey ( sort {$a cmp $b } keys %$graphs ) {
+        my $rrd = hash($graphs, $rrdkey);
+        next unless value($rrd, 'enable');
+        my $type = lc(value($rrd, 'type') || '');
+        push @skeys, $rrdkey;
+        my $mini = dformat($mask, { EXT => "png", TYPE => $type, KEY => $rrdkey, GTYPE => "mini" });
+        #my $gimage = value($rrd, 'image') || '';
+        #my $graph = array($rrd,"graph"); $graph->[0] = hash($rrd,"graph") unless $graph->[0];
+        #$image = catfile($odir, );
+        
+        $index_box->loop(
+                image => $mini,
+                path  => $path,
+                name  => $rrdkey,
+            );        
+    }    
+    $index_box->finish;
+    
+    # Выводим блоки графиков
+    my $graphs_box = $tpl->start('graphs');
+    foreach my $k (@skeys) {
+        my $type = lc(value($graphs, $k, 'type') || '');
+        my @ikeys = grep { $_ ne 'mini' } @$gtypes;
+        $graphs_box->loop(
+            title => $k,
+        );
+        my $img_box = $graphs_box->start('images');
+        foreach my $j (@ikeys) {
+            my $image = dformat($mask, { EXT => "png", TYPE => $type, KEY => $k, GTYPE => $j });
+            $img_box->loop(
+                image => $image,
+                path  => $path,
+            );
+        }
+        $img_box->finish;
+    }
+    $graphs_box->finish;
+    
+    # Запись результата в итоговый файл $idx_file
+    bsave( $idx_file ? $idx_file : catfile($odir, 'index.html'), $tpl->output, 1 );
+
+    # Вывод / Отладка
+    my $rslt = $self->foutput("rrd", {});
+    _show_result_data(\$rslt, $self->opt("utf8")) if $self->opt('verbose');
+    $self->status;
+}
+
 sub foutput { # Возвращает данные в выбранном (по типу) формате и отправка результата на выход
     my $self = shift;
     my $name = shift || 'monm'; # Имя секции
@@ -1021,6 +1673,164 @@ sub foutput { # Возвращает данные в выбранном (по типу) формате и отправка резул
     }
     return $doc;
 }
+sub _ag_remote_request { # Возвращает результат удаленной работы
+    my $self = shift;
+    my %d = @_;
+    my $c = $self->ctkx->c;
+    my $config = $c->config;
+    my $xml = $d{xml} || '';
+    
+    # Получются данные по HTTP
+    #
+    # 1. Принимается конфигурация сервера: HTTP атрибуты с учетом авторизации и прочей хрени
+    # 2. Проверяется коннект к серверу благодаря тестовому запросу GET check
+    # 3. Отправляется сам запрос по методу POST (в приоритете как default)
+    # 4. Принимается сообщение об ошибке и возвращается статус!
+
+    # Получение параметров HTTP
+    my $http_data = {};
+    my $http_attr = {};
+        
+    $http_data = hash($config => 'alertgrid/agent/http');
+    if (keys %$http_data) {
+        $http_attr = _get_attr($http_data);
+    } else {
+        debug "Incorrect configuration section <HTTP>";
+    }
+    #debug sprintf("ATTR: %s", Dumper($http_attr));
+
+    # Ставим куку
+    my $cookie_jar = undef;
+    if (value($http_data, 'cookieenable')) {
+        start "Setting Cookie";
+        my %cookie;
+        my $hhc = hash($http_data, 'cookie');
+        $cookie{file} = catfile($c->datadir, sprintf("%s.cj", $c->prefix));
+        $cookie{$_} = value($hhc, $_) for (keys %$hhc);
+        $cookie_jar = new HTTP::Cookies(%cookie);
+        finish DONE;
+    }
+
+    # Подготавливаем данные вызова
+    start "Preparing data for transfering";
+
+    # Подготавливаем агент
+    my %uaopt;
+    my $hhua = hash($http_data, 'ua');
+    $uaopt{agent} = __PACKAGE__."/".$VERSION;
+    $uaopt{timeout} = $self->opt("timeout") || value($hhua, "timeout") || AG_TIMEOUT;
+    $uaopt{cookie_jar} = $cookie_jar if $cookie_jar;
+    for (keys %$hhua) {
+        my $uas = node($hhua, $_);
+        $uaopt{$_} = array($uas) if is_array($uas);
+        $uaopt{$_} = value($uas) if is_value($uas);
+        $uaopt{$_} = hash($uas) if is_hash($uas) && $_ ne 'header';
+    }
+    my $ua = new LWP::UserAgent(%uaopt); 
+        
+    # Готовим хидеры для агента
+    my $hhh = hash($hhua, 'header');
+    $ua->default_header($_, value($hhh, $_)) for (keys %$hhh);
+
+    # Подготавливаем основной коннект
+    my $method = uc($self->opt("method") || value($http_data, 'method') || "GET");
+    my $url = $self->opt("url") || value($http_data, 'uri') || value($http_data, 'url') || '';
+    my $login = $self->opt("user") || value($http_data, 'user') || value($http_data, 'login') || '';
+    my $passwd = $self->opt("password") || value($http_data, 'password') || '';
+
+
+    # Подготавливаем URI-Object
+    my $uri = new URI( $url );
+    my $uri_test = $uri->clone;
+    
+    # Подготавливаем боевой URI
+    my %qform = $uri->query_form;
+    $qform{action} = $d{action} || '';
+    $qform{dbfile} = $d{dbfile} if value($http_data, 'senddbfile');
+    $qform{data} = $xml if $xml && $method eq 'GET';
+    $uri->query_form( %qform );
+
+    # Подготавливаем тестовый URI
+    my %qform_test = $uri_test->query_form;
+    $qform_test{action} = 'check';
+    $uri_test->query_form( %qform_test);
+
+
+    # Подготавливаем данные для вызова
+    $ua->add_handler( request_prepare => sub { 
+            my($req, $ua, $h) = @_;
+            $req->authorization_basic( $login, $passwd );
+            return $req;
+        } ) if $login;
+    my $req = new HTTP::Request(uc($method), $uri);
+    $req->header('Content-Type', ($method eq "POST") ? "application/x-www-form-urlencoded" : "text/plain") unless $req->header('Content-Type');
+        
+    if ($method eq "POST") {
+        my $req_content = '';
+        my $dreq = $uri->query;
+        $req_content = $dreq;
+        $req_content .= '&data='.$xml if $xml;
+        my $req_content_length = length $req_content;
+        $req->header('Content-Length', $req_content_length) unless $req->header('Content-Length'); # Not really needed
+        $req->content($req_content) if defined($req_content) && $req_content ne "";
+    }
+        
+    finish DONE; # Подготавливаем данные вызова
+
+    # Выполняем тестовый запрос
+    start "Sending check request";
+    {
+        my $req_test = new HTTP::Request('GET', $uri_test);
+        my $res = $ua->request($req_test);
+        if ($res->is_success) {
+            my $testdata = $res->decoded_content;
+            if ($testdata && length($testdata) && $testdata =~ /^OK/i) {
+                finish DONE;
+            } else {
+                $self->status(FALSE);
+                $self->message(ERROR);
+                $self->error($testdata);
+                finish ERROR;
+            }
+        } else {
+            $self->status(FALSE);
+            $self->message(ERROR);
+            $self->error($res->status_line);
+            finish ERROR;
+        }
+    }
+
+
+    # Выполняем основной запрос в случае прохождения тестового
+    start "Sending main request";
+    my $fetchdata = '';
+    {
+        if ($self->status) {
+            my $res = $ua->request($req);
+            if ($res->is_success) {
+                $fetchdata = $res->decoded_content;
+                if ($fetchdata && length($fetchdata) && $fetchdata =~ /^OK/i) {
+                    finish DONE;
+                } else {
+                    $self->status(FALSE);
+                    $self->message(ERROR);
+                    $self->error($fetchdata);
+                    $fetchdata = '';
+                    finish ERROR;
+                }
+            } else {
+                $self->status(FALSE);
+                $self->message(ERROR);
+                $self->error($res->status_line);
+                finish ERROR;
+            }
+        } else {
+            finish SKIPPED;
+        }
+    }
+
+    return $fetchdata;
+}
 
 sub _node2anode { # Переводит ноду в массив нод
     my $n = shift;
@@ -1028,7 +1838,7 @@ sub _node2anode { # Переводит ноду в массив нод
     return [$n] if ref($n) eq 'HASH';
     return $n;
 }
-sub _get_attr {
+sub _get_attr { # Позволяет устанавливать атрибуты HTTP и других секций
     my $in = shift;
     my $attr = array($in => "set");
     my %attrs;
@@ -1116,6 +1926,11 @@ sub _fduration { # From lwp_download
         $secs += $mins * 60;
         return "$secs seconds";
     }
+}
+sub _tms { # BackWard for CTK::tms
+    my $code = main->can("tms");
+    return &$code() if ref($code) eq 'CODE';
+    return "[$$] {TimeStamp: ".sprintf("%+.*f",4, time()-$^T)." sec}"
 }
 
 1;

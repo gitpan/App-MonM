@@ -4,7 +4,7 @@
       "Lepenkov Sergey (Serz Minus) <minus@mail333.com>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "ExtUtils::MakeMaker version 6.62, CPAN::Meta::Converter version 2.120921",
+   "generated_by" : "ExtUtils::MakeMaker version 6.96, CPAN::Meta::Converter version 2.120921",
    "license" : [
       "open_source"
    ],
@@ -38,6 +38,7 @@
          "requires" : {
             "CTK" : "1.16",
             "Class::C3::Adopt::NEXT" : "0.13",
+            "DBD::SQLite" : "1.4",
             "DBI" : "1.6",
             "Data::Dumper" : "0",
             "File::Copy" : "2.18",
@@ -50,6 +51,7 @@
             "LWP::MediaTypes" : "6",
             "LWP::UserAgent" : "5.8",
             "Mail::POP3Client" : "2.18",
+            "Module::Loaded" : "0.04",
             "Net::Ping" : "2.36",
             "Net::SMTP" : "2.31",
             "Net::Telnet" : "3.03",
@@ -74,5 +76,5 @@
          "url" : "https://svn.code.sf.net/p/app-monm/code/trunk"
       }
    },
-   "version" : "1.01"
+   "version" : "1.02"
 }

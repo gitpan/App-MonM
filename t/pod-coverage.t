@@ -8,7 +8,7 @@
 # This is free software; you can redistribute it and/or modify it
 # under the same terms as Perl itself.
 #
-# $Id: pod-coverage.t 12 2014-09-23 13:16:47Z abalama $
+# $Id: pod-coverage.t 33 2014-12-12 12:22:13Z abalama $
 #
 #########################################################################
 
@@ -16,12 +16,15 @@ use Test::More;
 eval "use Test::Pod::Coverage 1.08";
 plan skip_all => "Test::Pod::Coverage required for testing POD coverage" if $@;
 plan skip_all => "Currently a developer-only test" unless -d '.svn' || -d ".git";
-plan tests => 3;
+plan tests => 6;
 
 pod_coverage_ok( "App::MonM", { trustme => [qr/^(debug|start|finish|ctkx|foutput)$/] } );
 
 # App::MonM::*
+pod_coverage_ok( "App::MonM::AlertGrid", { trustme => [qr/^(LOCALHOSTIP)$/] } );
 pod_coverage_ok( "App::MonM::Checkit" );
 pod_coverage_ok( "App::MonM::Helper", { trustme => [qr/^(pool|dirs)$/] } );
+pod_coverage_ok( "App::MonM::Util" );
+pod_coverage_ok( "App::MonM::RRDtool", { trustme => [qr/^(GTYPES|MASK)$/] } );
 
 1;

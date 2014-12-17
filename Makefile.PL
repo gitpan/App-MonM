@@ -12,6 +12,7 @@ my $prereq_pm = {
         'CTK'                   => 1.16,
         'Data::Dumper'          => 0,
         'DBI'                   => 1.60,
+        'DBD::SQLite'           => 1.40,
         'File::Copy'            => 2.18,
         'File::Find'            => 1.15,
         'File::Path'            => 2.00,
@@ -22,6 +23,7 @@ my $prereq_pm = {
         'LWP::MediaTypes'       => 6.00,
         'LWP::UserAgent'        => 5.80,
         'Mail::POP3Client'      => 2.18,
+        'Module::Loaded'        => 0.04,
         'Net::Ping'             => 2.36,
         'Net::SMTP'             => 2.31,
         'Net::Telnet'           => 3.03,
@@ -37,6 +39,7 @@ my $exefiles = [qw[
         bin/monm
         bin/oradebug
         bin/sendalertsms
+        bin/alertgrid_snmp
         bin/checkers/ftpchecker
         bin/checkers/pop3checker
         bin/checkers/sshchecker
