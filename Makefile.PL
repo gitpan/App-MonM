@@ -27,6 +27,7 @@ my $prereq_pm = {
         'Net::Ping'             => 2.36,
         'Net::SMTP'             => 2.31,
         'Net::Telnet'           => 3.03,
+        'TemplateM'             => 3.03,
         'Text::SimpleTable'     => 2.03,
         'Text::Unidecode'       => 0.04,
         'Try::Tiny'             => 0.07,

@@ -1,5 +1,5 @@
 # TODO Wed Sep 10 09:21:07 2014 GMT
-# $Id: TODO 41 2014-12-17 12:21:59Z abalama $
+# $Id: TODO 43 2014-12-17 14:22:17Z abalama $
 
 # GENERAL
 
@@ -21,8 +21,7 @@
 
 # DOCUMENTATION
 
-    * Переделать WEB мануал по аналогии с App::MBUtiny так чтобы были картинки и данные примера
-      из share/alertgrid.txt и share/rrd.txt
+    * none
 
 # DIAGNOSTICS
 

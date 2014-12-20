@@ -1,4 +1,4 @@
-package App::MonM; # $Id: MonM.pm 37 2014-12-16 08:35:07Z abalama $
+package App::MonM; # $Id: MonM.pm 42 2014-12-17 12:33:09Z abalama $
 use strict;
 
 =head1 NAME
@@ -7,7 +7,7 @@ App::MonM - Simple Monitoring Tools
 
 =head1 VERSION
 
-Version 1.02
+Version 1.03
 
 =head1 SYNOPSIS
 
@@ -169,7 +169,7 @@ See C<LICENSE> file
 =cut
 
 use vars qw/ $VERSION /;
-$VERSION = '1.02';
+$VERSION = '1.03';
 
 use CTKx;
 use CTK::Util;

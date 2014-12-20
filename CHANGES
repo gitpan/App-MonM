@@ -1,4 +1,4 @@
-# $Id: CHANGES 38 2014-12-16 12:37:57Z abalama $
+# $Id: CHANGES 42 2014-12-17 12:33:09Z abalama $
 # Version/Revision history.
 
 1.00 Wed Sep 10 10:42:03 2014 GMT
@@ -12,3 +12,7 @@
     * Documentation modified
     * AlertGrid support added
     * RRD support added
+
+1.03 Wed Dec 17 15:29:42 2014 MSK
+    * Documentation modified
+    
